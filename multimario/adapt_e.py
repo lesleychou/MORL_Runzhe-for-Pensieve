@@ -1,6 +1,10 @@
 ## multi-obejcetive super mario bros
 ## created by Runzhe Yang on Jan. 21, 2019
 
+# Yajie Zhou comments
+# EnvelopeMoActorAgent adaptation
+
+
 import gym
 import os
 import random

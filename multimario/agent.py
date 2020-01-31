@@ -582,6 +582,7 @@ class EnveDoubleMoActorAgent(object):
     def sync(self):
         self.model_.load_state_dict(self.model.state_dict())
 
+
 # projection to simplex
 def simplex_proj(x):
     y = -np.sort(-x)

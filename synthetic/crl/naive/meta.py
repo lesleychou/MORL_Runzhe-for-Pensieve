@@ -41,6 +41,8 @@ class MetaAgent(object):
         self.batch_size = args.batch_size
         self.weight_num = args.weight_num
         self.trans_mem = deque()
+
+        # state, action, next state, reward, terminal_state
         self.trans = namedtuple('trans', ['s', 'a', 's_', 'r', 'd'])
         self.priority_mem = deque()
 
@@ -67,6 +69,7 @@ class MetaAgent(object):
                 self.w_kept = (torch.abs(self.w_kept) / \
                                torch.norm(self.w_kept, p=1)).type(FloatTensor)
             preference = self.w_kept
+            # weights is a 'reward_size' tensor
 
         state = torch.from_numpy(state).type(FloatTensor)
 

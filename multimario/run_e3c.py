@@ -1,6 +1,9 @@
 ## multi-obejcetive super mario bros
 ## modified by Runzhe Yang on Dec. 18, 2018
 
+# Yajie Zhou comments
+# EnvelopeActorAgent_A3C model
+
 import gym
 import os
 import random
