@@ -62,6 +62,13 @@ class MetaAgent(object):
             self.model_.cuda()
 
     def act(self, state, preference=None):
+        '''
+        what is the reward_size for VS?  3
+        the state of VS: "past chunk throughput, past chunk download time,
+            next chunk sizes, current buffer size, # of chunks left, last chunk bitrate"
+
+        How to calculate Q here? use NaiveOnelayerCQN, add preferences in the forward step
+        '''
         # random pick a preference if it is not specified
         if preference is None:
             if self.w_kept is None:
@@ -70,9 +77,11 @@ class MetaAgent(object):
                                torch.norm(self.w_kept, p=1)).type(FloatTensor)
             preference = self.w_kept
             # weights is a 'reward_size' tensor
+            # reward: [bitrate, rebuffering, smoothness], (1, 3)
 
         state = torch.from_numpy(state).type(FloatTensor)
 
+        # model return q, scalar value for each action with given state
         _, Q = self.model_(
             Variable(state.unsqueeze(0), requires_grad=False),
             Variable(preference.unsqueeze(0), requires_grad=False))
@@ -80,6 +89,9 @@ class MetaAgent(object):
         action = Q.max(1)[1].data.cpu().numpy()
         action = int(action[0])
 
+        # what is this if doing??
+        # if model is training, do the random action to explore
+        # when trans_mem_size < each batch_size, OR the random number < epsilon, do the random action
         if self.is_train and (len(self.trans_mem) < self.batch_size or \
                               torch.rand(1)[0] < self.epsilon):
             action = np.random.choice(self.model.action_size, 1)[0]
@@ -96,6 +108,7 @@ class MetaAgent(object):
             terminal))  # terminal
 
         # randomly produce a preference for calculating priority
+        #
         #if roi: 
         #    preference = self.w_kept
         #else:
@@ -105,40 +118,60 @@ class MetaAgent(object):
 
         state = torch.from_numpy(state).type(FloatTensor)
 
+        # input state and action to the model
+        # generate q value from the model
         _, q = self.model_(Variable(state.unsqueeze(0), requires_grad=False),
                            Variable(preference.unsqueeze(0), requires_grad=False))
+        # why is this?
         q = q[0, action].data
+        # what is 'wr'? weighted/scalarized reward
         wr = preference.dot(torch.from_numpy(reward).type(FloatTensor))
         if not terminal:
             next_state = torch.from_numpy(next_state).type(FloatTensor)
+            # hq is q.detach
             hq, _ = self.model_(Variable(next_state.unsqueeze(0), requires_grad=False),
                                 Variable(preference.unsqueeze(0), requires_grad=False))
             hq = hq.data[0]
+            # what is 'p'? Priority
             p = abs(wr + self.gamma * hq - q)
         else:
             self.w_kept = None
             if self.epsilon_decay:
                 self.epsilon -= self.epsilon_delta
             p = abs(wr - q)
+        # why?
         p += 1e-5
 	
         #if roi: 
         #    p = 1
 
+        # create and store priority
         self.priority_mem.append(
             p
         )
+        # when trans_mem_size grow more than mem_size, pop the first
         if len(self.trans_mem) > self.mem_size:
             self.trans_mem.popleft()
             self.priority_mem.popleft()
 
+    # how does sample work?
     def sample(self, pop, pri, k):
+        ''' Sample a minibatch of transitions from our memory
+        pop: transition memory
+        pri: priority
+        k: batch size
+        '''
+        # reformat priority as a numpy array, with type float
         pri = np.array(pri).astype(np.float)
+
+        # grab random indices
         inds = np.random.choice(
             range(len(pop)), k,
             replace=False,
             p=pri / pri.sum()
         )
+
+        # return the sample
         return [pop[i] for i in inds]
 
     def actmsk(self, num_dim, index):
@@ -146,6 +179,7 @@ class MetaAgent(object):
         mask[index] = 1
         return mask.unsqueeze(0)
 
+    # what is this? non-terminal-indices
     def nontmlinds(self, terminal_batch):
         mask = ByteTensor(terminal_batch)
         inds = torch.arange(0, len(terminal_batch)).type(LongTensor)
@@ -157,6 +191,7 @@ class MetaAgent(object):
 
             self.update_count += 1
 
+            # where did it call the 'self.trans'?
             minibatch = self.sample(self.trans_mem, self.priority_mem, self.batch_size)
             batchify = lambda x: list(x) * self.weight_num
             state_batch = batchify(map(lambda x: x.s.unsqueeze(0), minibatch))
@@ -177,7 +212,7 @@ class MetaAgent(object):
                           np.linalg.norm(w_batch, ord=1, axis=1, keepdims=True)
                 w_batch = torch.from_numpy(w_batch.repeat(self.batch_size, axis=0)).type(FloatTensor)
             
-
+            # give the 'w_batch', output the Q or learn the Q?
             __, Q = self.model_(Variable(torch.cat(state_batch, dim=0)),
                                 Variable(w_batch))
             # detach since we don't want gradients to propagate
@@ -187,18 +222,23 @@ class MetaAgent(object):
                                Variable(w_batch, requires_grad=False))
             _, act = self.model_(Variable(torch.cat(next_state_batch, dim=0), requires_grad=False),
                                  Variable(w_batch, requires_grad=False))[1].max(1)
+            # what is HQ, DQ, act here
             HQ = DQ.gather(1, act.unsqueeze(dim=1)).squeeze()
 
+            # w_reward_batch is weight multiply reward?
             w_reward_batch = torch.bmm(w_batch.unsqueeze(1),
                                        torch.cat(reward_batch, dim=0).unsqueeze(2)
                                        ).squeeze()
 
+            # non-terminal-???
             nontmlmask = self.nontmlinds(terminal_batch)
             with torch.no_grad():
+                # what is Tau_Q??
                 Tau_Q = Variable(torch.zeros(self.batch_size * self.weight_num).type(FloatTensor))
                 Tau_Q[nontmlmask] = self.gamma * HQ[nontmlmask]
                 Tau_Q += Variable(w_reward_batch)
 
+            # what is act before?
             actions = Variable(torch.cat(action_batch, dim=0))
 
             # Compute Huber loss
