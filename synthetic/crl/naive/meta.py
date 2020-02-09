@@ -187,12 +187,19 @@ class MetaAgent(object):
         return inds
 
     def learn(self, preference=None):
+        # why larger?
+        # in DQN, we sample from the trans_mem a batch of of size
+        # only when the replay buffer at least larger than batch_size, do sample
+        # Until we have that, do nothing
         if len(self.trans_mem) > self.batch_size:
 
             self.update_count += 1
 
-            # where did it call the 'self.trans'?
+            # Sample a minibatch from the transition memory
             minibatch = self.sample(self.trans_mem, self.priority_mem, self.batch_size)
+            # why to do batchify? how does it used
+            # copy the trans for weight_num (default 32) times, then combine with the w_batch,
+            # where for each trans only the weight is different
             batchify = lambda x: list(x) * self.weight_num
             state_batch = batchify(map(lambda x: x.s.unsqueeze(0), minibatch))
             action_batch = batchify(map(lambda x: LongTensor([x.a]), minibatch))
@@ -202,15 +209,17 @@ class MetaAgent(object):
 
             if preference is None:
                 w_batch = np.random.randn(self.weight_num, self.model_.reward_size)
+                # normalized w_batch
                 w_batch = np.abs(w_batch) / \
                           np.linalg.norm(w_batch, ord=1, axis=1, keepdims=True)
+                # repeat each w for 'batch_size' times
                 w_batch = torch.from_numpy(w_batch.repeat(self.batch_size, axis=0)).type(FloatTensor)
             else:
                 w_batch = preference.cpu().numpy()
                 w_batch = np.expand_dims(w_batch, axis=0)
                 w_batch = np.abs(w_batch) / \
                           np.linalg.norm(w_batch, ord=1, axis=1, keepdims=True)
-                w_batch = torch.from_numpy(w_batch.repeat(self.batch_size, axis=0)).type(FloatTensor)
+                w_batch = torch.from_numpy(w_batch.repeat(self.batch_size, axis=0)).atype(FloatTensor)
             
             # give the 'w_batch', output the Q or learn the Q?
             __, Q = self.model_(Variable(torch.cat(state_batch, dim=0)),
@@ -223,25 +232,37 @@ class MetaAgent(object):
             _, act = self.model_(Variable(torch.cat(next_state_batch, dim=0), requires_grad=False),
                                  Variable(w_batch, requires_grad=False))[1].max(1)
             # what is HQ, DQ, act here
+            # why use them? how to explain to others
+
+            # for .gather(), see https://stackoverflow.com/questions/50999977
+            # gather will index the rows of the DQ by the list of act.
+            # HQ is current Q values
             HQ = DQ.gather(1, act.unsqueeze(dim=1)).squeeze()
 
-            # w_reward_batch is weight multiply reward?
+            # w_reward_batch is weight_batch multiply reward_batch
             w_reward_batch = torch.bmm(w_batch.unsqueeze(1),
                                        torch.cat(reward_batch, dim=0).unsqueeze(2)
                                        ).squeeze()
 
-            # non-terminal-???
+            # non terminal indexes on the terminal mask
             nontmlmask = self.nontmlinds(terminal_batch)
             with torch.no_grad():
-                # what is Tau_Q??
+                # Tau_Q is the real target Q
                 Tau_Q = Variable(torch.zeros(self.batch_size * self.weight_num).type(FloatTensor))
+                # Tau_Q want all the non-terminal values and replace it by gamma*HQ
+                # for terminal, return w_reward
+                # for non-terminal, calculate Bellman
                 Tau_Q[nontmlmask] = self.gamma * HQ[nontmlmask]
                 Tau_Q += Variable(w_reward_batch)
 
             # what is act before?
+            # act is directly from the model
+            # action_batch is from the trans_mem
             actions = Variable(torch.cat(action_batch, dim=0))
 
             # Compute Huber loss
+            # Q is the predicted Q
+            # loss between Q and Tau_Q
             loss = F.smooth_l1_loss(Q.gather(1, actions.unsqueeze(dim=1)), Tau_Q.unsqueeze(dim=1))
 
             self.optimizer.zero_grad()
