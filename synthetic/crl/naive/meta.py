@@ -221,8 +221,8 @@ class MetaAgent(object):
                           np.linalg.norm(w_batch, ord=1, axis=1, keepdims=True)
                 w_batch = torch.from_numpy(w_batch.repeat(self.batch_size, axis=0)).atype(FloatTensor)
             
-            # give the 'w_batch', output the Q or learn the Q?
-            __, Q = self.model_(Variable(torch.cat(state_batch, dim=0)),
+            # give the 'w_batch', output the Q from the model?
+            __, Q = self.model_(Variable(torch.cat(state_batch, rdim=0)),
                                 Variable(w_batch))
             # detach since we don't want gradients to propagate
             # HQ, _    = self.model_(Variable(torch.cat(next_state_batch, dim=0), volatile=True),

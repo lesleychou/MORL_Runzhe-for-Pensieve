@@ -92,9 +92,11 @@ parser.add_argument('--reward-scale', type=float, default=1.0, metavar='RS',
 parser.add_argument('--sample-size', type=int, default=8, metavar='SS',
                     help='number of preference samples for updating')
 
+# what is this doing? do we need this too?
+# what is done[t]? no df
 def make_train_data(args, reward, done, value, next_value, reward_size):
     discounted_return = np.empty([args.num_step, reward_size])
-    
+
     # Discounted Return
     if args.use_gae:
         gae = np.zeros(reward_size)
@@ -114,20 +116,35 @@ def make_train_data(args, reward, done, value, next_value, reward_size):
     return discounted_return
 
 
+# what is this doing? do we need this too?
+# adv is used to calculated Actor_Loss in the agent/train
 def envelope_operator(args, preference, target, value, reward_size, g_step):
-    
-    # [w1, w1, w1, w1, w1, w1, w2, w2, w2, w2, w2, w2...]
-    # [s1, s2, s3, u1, u2, u3, s1, s2, s3, u1, u2, u3...]
+    '''
+    :param args:
+    :param preference: update_w = generate_w()
+    :param target: target = make_train_data(), is this the real Q?
+    :param value: value, next_value, policy = agent.forward_transition(
+                total_state, total_next_state, total_update_w)
+    :param reward_size: 5
+    :param g_step: global_step = args.num_worker * args.num_step = 16 * 5
+    :return: 'total_target, total_adv', and input them to the train()
+    '''
+    # what is u1... utility???
+    # [w1, w1, w1, w1, w1, w1,    w2, w2, w2, w2, w2, w2...]
+    # [s1, s2, s3, u1, u2, u3,    s1, s2, s3, u1, u2, u3...]
 
     # weak envelope calculation
     ofs = args.num_worker * args.num_step
     target = np.concatenate(target).reshape(-1, reward_size)
     if g_step > args.enve_start:
         prod = np.inner(target, preference)
+        # envelope_mask?
         envemask = prod.transpose().reshape(args.sample_size, -1, ofs).argmax(axis=1)
         envemask = envemask.reshape(-1) * ofs + np.array(list(range(ofs))*args.sample_size)
         target = target[envemask]
     # For Actor
+    # Q = state Value function V(s) and the advantage value A(s, a)
+    # adv = Q - state Value function V(s)
     adv = target - value
 
     return target, adv
@@ -242,6 +259,8 @@ if __name__ == '__main__':
             for parent_conn in parent_conns:
                 s, r, d, rd, mor, sc = parent_conn.recv()
                 next_states.append(s)
+                # why dot the fixed_w here?
+                # is here should be explore_w??
                 rewards.append(fixed_w.dot(mor))
                 dones.append(d)
                 real_dones.append(rd)
@@ -287,6 +306,7 @@ if __name__ == '__main__':
                 sample_morall = 0
 
         if args.training:
+            # reward size is 5,
             # [w1, w1, w1, w1, w1, w1, w2, w2, w2, w2, w2, w2...]
             # [s1, s2, s3, u1, u2, u3, s1, s2, s3, u1, u2, u3...]
             # expand w batch
@@ -302,7 +322,9 @@ if __name__ == '__main__':
             total_next_state = np.stack(total_next_state).transpose(
                 [1, 0, 2, 3, 4]).reshape([-1, 4, 84, 84])
             total_next_state = np.tile(total_next_state, (args.sample_size, 1, 1, 1))
+
             # calculate utility from reward vectors
+            # what is utility? no use
             total_moreward = np.array(total_moreward).transpose([1, 0, 2]).reshape([-1, reward_size])
             total_moreward = np.tile(total_moreward, (args.sample_size, 1))
             total_utility = np.sum(total_moreward * total_update_w, axis=-1).reshape([-1])
@@ -325,7 +347,6 @@ if __name__ == '__main__':
                 np.mean(recent_prob),
                 sample_episode)
 
-            total_target = []
             total_adv = []
             for idw in range(args.sample_size):
                 ofs = args.num_worker * args.num_step

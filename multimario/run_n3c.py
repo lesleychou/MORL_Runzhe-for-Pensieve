@@ -204,7 +204,7 @@ if __name__ == '__main__':
     # fixed_w = np.array([1.00, 0.00, 0.00, 0.00, 0.00])
     # fixed_w = np.array([0.00, 1.00, 0.00, 0.00, 0.00])
     # fixed_w = np.array([0.00, 0.00, 1.00, 0.00, 0.00])
-    explore_w = generate_w(args.num_worker, reward_size, fixed_w) 
+    explore_w = generate_w(args.num_worker, reward_size, fixed_w)
 
     while True:
         total_state, total_reward, total_done, total_next_state, total_action, total_moreward = [], [], [], [], [], []
@@ -230,6 +230,7 @@ if __name__ == '__main__':
                 morewards.append(mor)
                 scores.append(sc)
                 # resample if done
+                # what is d??? do I need this in Pensieve?
                 if d:
                 # if cnt > 0 and d:
                     explore_w = renew_w(explore_w, cnt)

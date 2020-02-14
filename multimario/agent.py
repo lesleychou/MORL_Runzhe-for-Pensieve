@@ -177,6 +177,8 @@ class NaiveMoActorAgent(object):
 
         return value, next_value, policy
 
+# Where did you use the find_preference?
+# in the adapt_n and adapt_e
     def find_preference(
             self,
             w_batch,
@@ -185,6 +187,7 @@ class NaiveMoActorAgent(object):
 
         with torch.no_grad():
             w_batch = torch.FloatTensor(w_batch).to(self.device)
+            # why here don't use target_batch?
             target_batch = torch.FloatTensor(pref_param).to(self.device)/200
 
         # compute loss
@@ -425,6 +428,7 @@ class EnveDoubleMoActorAgent(object):
             reward_size):
         self.model = EnveMoCnnActorCriticNetwork(
             input_size, output_size, reward_size)
+        # create a new instance of the model and just copy the parameters
         self.model_ = copy.deepcopy(self.model)
         self.num_env = args.num_worker
         self.output_size = output_size
@@ -453,6 +457,8 @@ class EnveDoubleMoActorAgent(object):
         w = torch.Tensor(preference).to(self.device)
         w = w.float()
         policy, value = self.model(state, w)
+        # what is temperature? what is it doing?
+        # softmax with temperature to encourage exploration
         if self.training:
             policy = F.softmax(policy/self.T, dim=-1).data.cpu().numpy()
         else:
@@ -472,6 +478,8 @@ class EnveDoubleMoActorAgent(object):
         state = state.float()
         w = torch.Tensor(preference).to(self.device)
         w = w.float()
+
+        # why split policy and value to the deep-copy model?
         _, value = self.model_(state, w)
         policy, _ = self.model(state, w)
 
@@ -479,6 +487,8 @@ class EnveDoubleMoActorAgent(object):
         next_state = next_state.float()
         w = torch.Tensor(preference).to(self.device)
         w = w.float()
+
+        # why the next_value should be in the model_ ?
         _, next_value = self.model_(next_state, w)
 
         value = value.data.cpu().numpy().squeeze()
@@ -486,6 +496,7 @@ class EnveDoubleMoActorAgent(object):
 
         return value, next_value, policy
 
+    # what is this doing??
     def anneal(self):
         self.T = 0.01+0.99*self.T
 
@@ -497,6 +508,7 @@ class EnveDoubleMoActorAgent(object):
 
         with torch.no_grad():
             w_batch = torch.FloatTensor(w_batch).to(self.device)
+            # why did target_batch change here?
             target_batch = torch.FloatTensor(target_batch).to(self.device)
 
         # compute loss
@@ -534,8 +546,14 @@ class EnveDoubleMoActorAgent(object):
             target_batch = torch.FloatTensor(target_batch).to(self.device)
             action_batch = torch.LongTensor(action_batch).to(self.device)
             adv_batch = torch.FloatTensor(adv_batch).to(self.device)
+            '''
+            what is adv???
+            run_e3c_double: adv = target - value
+            run_n3c: adv = discounted_return - value
+            '''
 
-        # calculate scalarized advantage   
+        # calculate scalarized advantage
+        ## what is this doing???
         wadv_batch = torch.bmm(adv_batch.unsqueeze(1), 
                                w_batch.unsqueeze(2)).squeeze()
 
@@ -552,6 +570,7 @@ class EnveDoubleMoActorAgent(object):
         m = Categorical(F.softmax(policy, dim=-1))
 
         # calculate scalarized value and target
+        ## what is this doing???
         wvalue = torch.bmm(value.unsqueeze(1), 
                            w_batch.unsqueeze(2)).squeeze()
         wtarget = torch.bmm(target_batch.unsqueeze(1), 
@@ -564,6 +583,7 @@ class EnveDoubleMoActorAgent(object):
         entropy = m.entropy()
 
         # Critic loss
+        # This diff from Naive
         mse = nn.MSELoss()
         critic_loss_l1 = mse(wvalue, wtarget)
         critic_loss_l2 = mse(value.view(-1), target_batch.view(-1))
@@ -571,6 +591,7 @@ class EnveDoubleMoActorAgent(object):
         self.optimizer.zero_grad()
 
         # Total loss (don't compute tempreture)
+        # This diff from Naive
         loss = actor_loss.mean()
         loss += 0.5 * (self.beta * critic_loss_l1 + (1-self.beta) * critic_loss_l2)
         loss -= self.entropy_coef * entropy.mean()
@@ -579,6 +600,7 @@ class EnveDoubleMoActorAgent(object):
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
         self.optimizer.step() 
 
+    # new func, why need sync?
     def sync(self):
         self.model_.load_state_dict(self.model.state_dict())
 
