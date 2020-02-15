@@ -489,6 +489,7 @@ class EnveDoubleMoActorAgent(object):
         w = w.float()
 
         # why the next_value should be in the model_ ?
+        # we need the next_value in the 'target'
         _, next_value = self.model_(next_state, w)
 
         value = value.data.cpu().numpy().squeeze()

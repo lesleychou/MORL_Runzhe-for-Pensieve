@@ -95,14 +95,24 @@ parser.add_argument('--sample-size', type=int, default=8, metavar='SS',
 # what is this doing? do we need this too?
 # what is done[t]? no df
 def make_train_data(args, reward, done, value, next_value, reward_size):
+    '''
+    :param args:
+    :param reward: total_moreward
+    :param done:
+    :param value:
+    :param next_value:
+    :param reward_size:
+    :return: target given to envelope_operator
+    '''
     discounted_return = np.empty([args.num_step, reward_size])
 
     # Discounted Return
     if args.use_gae:
+        # what is gae, what is done?
+        # gae is gradient?
         gae = np.zeros(reward_size)
         for t in range(args.num_step - 1, -1, -1):
-            delta = reward[t] + args.gamma * \
-                next_value[t] * (1 - done[t]) - value[t]
+            delta = reward[t] + args.gamma * next_value[t] * (1 - done[t]) - value[t]
             gae = delta + args.gamma * args.lam * (1 - done[t]) * gae
 
             discounted_return[t] = gae + value[t]
@@ -117,6 +127,7 @@ def make_train_data(args, reward, done, value, next_value, reward_size):
 
 
 # what is this doing? do we need this too?
+# return the Q which optimize "????"
 # adv is used to calculated Actor_Loss in the agent/train
 def envelope_operator(args, preference, target, value, reward_size, g_step):
     '''
@@ -143,8 +154,9 @@ def envelope_operator(args, preference, target, value, reward_size, g_step):
         envemask = envemask.reshape(-1) * ofs + np.array(list(range(ofs))*args.sample_size)
         target = target[envemask]
     # For Actor
-    # Q = state Value function V(s) and the advantage value A(s, a)
+    # Q = state Value function V(s) + advantage value A(s, a)
     # adv = Q - state Value function V(s)
+    # value: Critic value given states
     adv = target - value
 
     return target, adv
@@ -348,6 +360,8 @@ if __name__ == '__main__':
                 sample_episode)
 
             total_adv = []
+            total_target =[]
+
             for idw in range(args.sample_size):
                 ofs = args.num_worker * args.num_step
                 for idx in range(args.num_worker):
@@ -359,7 +373,10 @@ if __name__ == '__main__':
                                   reward_size)
                     total_target.append(target)
 
+            print(total_target, "--------before envelope----------")
+
             total_target, total_adv = envelope_operator(args, update_w, total_target, value, reward_size, global_step)
+            print(total_target, "--------after envelope----------")
 
             agent.train_model(
                 total_state,
